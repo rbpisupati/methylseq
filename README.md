@@ -23,6 +23,7 @@ Choose between workflows by using `--aligner bismark` (default, uses bowtie2 for
 | Align Reads                                  | Bismark          | bwa-meth              |
 | Deduplicate Alignments                       | Bismark          | Picard MarkDuplicates |
 | Extract methylation calls                    | Bismark          | MethylDackel          |
+| Methylation calls, conversion rate           | methylpy         | methylpy              |
 | Sample report                                | Bismark          | -                     |
 | Summary Report                               | Bismark          | -                     |
 | Alignment QC                                 | Qualimap         | Qualimap              |
@@ -34,6 +35,11 @@ Choose between workflows by using `--aligner bismark` (default, uses bowtie2 for
 i. Install [`nextflow`](https://nf-co.re/usage/installation)
 
 ii. Install either [`Docker`](https://docs.docker.com/engine/installation/) or [`Singularity`](https://www.sylabs.io/guides/3.0/user-guide/) for full pipeline reproducibility (please only use [`Conda`](https://conda.io/miniconda.html) as a last resort; see [docs](https://nf-co.re/usage/configuration#basic-configuration-profiles))
+
+Since, methylpy is only added in conda environment file. Please use conda installation.
+```bash 
+conda env create -f methylseq/environment.yml
+```
 
 iii. Download the pipeline and test it on a minimal dataset with a single command
 

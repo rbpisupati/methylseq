@@ -26,9 +26,13 @@ def helpMessage() {
       -profile [str]                    Configuration profile to use. Can use multiple (comma separated)
                                             Available: conda, docker, singularity, test, awsbatch, <institute> and more
 
+    Input file Options:
+      --file_ext [str]                  Input file format.
+                                            Available: bam, sra or fastq
+      --single_end [bool]               Specifies that the input is single end reads
+     
     Options:
      --genome [str]                     Name of iGenomes reference
-     --single_end [bool]                Specifies that the input is single end reads
      --comprehensive [bool]             Output information for all cytosine contexts
      --cytosine_report [bool]           Output stranded cytosine report during Bismark's bismark_methylation_extractor step.
      --ignore_flags [bool]              Run MethylDackel with the flag to ignore SAM flags.
@@ -54,6 +58,8 @@ def helpMessage() {
       --bismark_index [path]            Path to Bismark index
       --bwa_meth_index [path]           Path to bwameth index
       --save_reference [bool]           Save reference(s) to results directory
+      --umeth [str]                     Contig name used to calculate conversion rate for methylpy
+                                            Ex. "ChrC:", if chlroplast sequence is in fasta reference with name ChrC
 
     Trimming options:
      --skip_trimming [bool]             Skip read trimming
@@ -130,7 +136,7 @@ if( params.aligner =~ /bismark/ ){
         Channel
             .fromPath(params.fasta, checkIfExists: true)
             .ifEmpty { exit 1, "fasta file not found : ${params.fasta}" }
-            .set { ch_fasta_for_makeBismarkIndex }
+            .into { ch_fasta_for_makeBismarkIndex; ch_fasta_for_methylpy }
     }
 }
 else if( params.aligner == 'bwameth' ){
@@ -140,7 +146,7 @@ else if( params.aligner == 'bwameth' ){
     Channel
         .fromPath(params.fasta, checkIfExists: true)
         .ifEmpty { exit 1, "fasta file not found : ${params.fasta}" }
-        .into { ch_fasta_for_makeBwaMemIndex; ch_fasta_for_makeFastaIndex; ch_fasta_for_methyldackel }
+        .into { ch_fasta_for_makeBwaMemIndex; ch_fasta_for_makeFastaIndex; ch_fasta_for_methyldackel; ch_fasta_for_methylpy }
 
     if( params.bwa_meth_index ){
         Channel
@@ -224,7 +230,12 @@ ch_output_docs = file("$baseDir/docs/output.md", checkIfExists: true)
 /*
  * Create a channel for input read files
  */
-if (params.readPaths) {
+if (params.file_ext == 'bam' || params.file_ext == 'sra' ){
+    ch_input_bam_files = Channel
+        .fromPath( params.reads )
+        .map { row -> [ file(row).baseName, file(row, checkIfExists: true) ] }
+        .ifEmpty { exit 1, "Cannot find any bam files matching: ${params.reads}\n" }
+} else if (params.readPaths) {
     if (params.single_end) {
         Channel
             .from(params.readPaths)
@@ -433,6 +444,35 @@ if( !params.fasta_index && params.aligner == 'bwameth' ){
     }
 }
 
+/*
+ * Preprocessing input bam files
+*/
+if (params.file_ext == 'bam' || params.file_ext == 'sra'){
+
+    process processBams {
+        tag "$name"
+        storeDir "${workflow.workDir}/rawreads"
+
+        input:
+        set val(name), file(reads) from ch_input_bam_files
+
+        output:
+        set val(name), file("${name}*fastq") into ch_read_files_for_fastqc, ch_read_files_for_trim_galore
+
+        script:
+        if (params.file_ext == "sra") {
+            def c_single_end = params.single_end ? "" : "--split-files"
+            """
+            fastq-dump $c_single_end $reads
+            """
+        } else if (params.file_ext == "bam") {
+            def c_single_end = params.single_end ? "FASTQ=${name}.fastq" : "FASTQ=${name}_1.fastq SECOND_END_FASTQ=${name}_2.fastq"
+            """
+            picard SamToFastq I=$reads $c_single_end VALIDATION_STRINGENCY=LENIENT
+            """
+        }
+    }
+}
 
 /*
  * STEP 1 - FastQC
@@ -603,7 +643,7 @@ if( params.aligner =~ /bismark/ ){
      * STEP 4 - Bismark deduplicate
      */
     if( params.skip_deduplication || params.rrbs ) {
-        ch_bam_for_bismark_deduplicate.into { ch_bam_dedup_for_bismark_methXtract; ch_bam_dedup_for_qualimap }
+        ch_bam_for_bismark_deduplicate.into { ch_bam_dedup_for_bismark_methXtract; ch_bam_dedup_for_qualimap; ch_bam_for_methylpy }
         ch_bismark_dedup_log_for_bismark_report = Channel.from(false)
         ch_bismark_dedup_log_for_bismark_summary = Channel.from(false)
         ch_bismark_dedup_log_for_multiqc  = Channel.from(false)
@@ -617,7 +657,7 @@ if( params.aligner =~ /bismark/ ){
             set val(name), file(bam) from ch_bam_for_bismark_deduplicate
 
             output:
-            set val(name), file("*.deduplicated.bam") into ch_bam_dedup_for_bismark_methXtract, ch_bam_dedup_for_qualimap
+            set val(name), file("*.deduplicated.bam") into ch_bam_dedup_for_bismark_methXtract, ch_bam_dedup_for_qualimap, ch_bam_for_methylpy
             set val(name), file("*.deduplication_report.txt") into ch_bismark_dedup_log_for_bismark_report, ch_bismark_dedup_log_for_bismark_summary, ch_bismark_dedup_log_for_multiqc
 
             script:
@@ -837,7 +877,7 @@ if( params.aligner == 'bwameth' ){
      * STEP 5 - Mark duplicates
      */
     if( params.skip_deduplication || params.rrbs ) {
-        ch_bam_sorted_for_markDuplicates.into { ch_bam_dedup_for_methyldackel; ch_bam_dedup_for_qualimap }
+        ch_bam_sorted_for_markDuplicates.into { ch_bam_dedup_for_methyldackel; ch_bam_dedup_for_qualimap; ch_bam_for_methylpy }
         ch_bam_index.set { ch_bam_index_for_methyldackel }
         ch_markDups_results_for_multiqc = Channel.from(false)
     } else {
@@ -850,7 +890,7 @@ if( params.aligner == 'bwameth' ){
             set val(name), file(bam) from ch_bam_sorted_for_markDuplicates
 
             output:
-            set val(name), file("${bam.baseName}.markDups.bam") into ch_bam_dedup_for_methyldackel, ch_bam_dedup_for_qualimap
+            set val(name), file("${bam.baseName}.markDups.bam") into ch_bam_dedup_for_methyldackel, ch_bam_dedup_for_qualimap, ch_bam_for_methylpy
             set val(name), file("${bam.baseName}.markDups.bam.bai") into ch_bam_index_for_methyldackel //ToDo check if this correctly overrides the original channel
             file "${bam.baseName}.markDups_metrics.txt" into ch_markDups_results_for_multiqc
 
@@ -969,6 +1009,41 @@ process preseq {
         -@ ${task.cpus} $sort_mem \\
         -o ${bam.baseName}.sorted.bam
     preseq lc_extrap -v -B ${bam.baseName}.sorted.bam -o ${bam.baseName}.ccurve.txt
+    """
+}
+
+process allc_methylpy {
+    tag "$name"
+    publishDir "${params.outdir}", mode: 'copy',
+        saveAs: {filename ->
+            if (filename =~ '^allc' ) "methylpy/$filename"
+            else if (filename =~ '^conversion' ) "info/$filename"
+            else if (filename =~ '^log' ) "info/log.${name}.txt"
+          }
+
+    input:
+    set val(name), file(bam) from ch_bam_for_methylpy
+    file fasta from ch_fasta_for_methylpy.collect()
+
+    output:
+    file "allc_${name}*" into methylpy_results
+    file("conversion_rate_${name}.txt") into methylpy_conv_rate
+    file("log.txt") into methylpy_log_file
+
+    script:
+    // 1. need to sort bam files
+    // 2. methylpy to generate allc files
+    """
+    samtools sort -o ${name}.sorted.bam $bam 
+    samtools index ${name}.sorted.bam
+    methylpy call-methylation-state \
+    --input-file ${name}.sorted.bam  \
+    --paired-end True \
+    --sample $name \
+    --ref-fasta $fasta \
+    --unmethylated-control $params.umeth \
+    --num-procs ${task.cpus} > log.txt 2>&1
+    cat log.txt | grep "non-conversion rate" > conversion_rate_${name}.txt
     """
 }
 
