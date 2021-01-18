@@ -1012,39 +1012,41 @@ process preseq {
     """
 }
 
-process allc_methylpy {
-    tag "$name"
-    publishDir "${params.outdir}", mode: 'copy',
-        saveAs: {filename ->
-            if (filename =~ '^allc' ) "methylpy/$filename"
-            else if (filename =~ '^conversion' ) "info/$filename"
-            else if (filename =~ '^log' ) "info/log.${name}.txt"
-          }
+if ( params.umeth ){ // run methylpy only when one gives unmethylated control
+    process allc_methylpy {
+        tag "$name"
+        publishDir "${params.outdir}", mode: 'copy',
+            saveAs: {filename ->
+                if (filename =~ '^allc' ) "methylpy/$filename"
+                else if (filename =~ '^conversion' ) "info/$filename"
+                else if (filename =~ '^log' ) "info/log.${name}.txt"
+            }
 
-    input:
-    set val(name), file(bam) from ch_bam_for_methylpy
-    file fasta from ch_fasta_for_methylpy.collect()
+        input:
+        set val(name), file(bam) from ch_bam_for_methylpy
+        file fasta from ch_fasta_for_methylpy.collect()
 
-    output:
-    file "allc_${name}*" into methylpy_results
-    file("conversion_rate_${name}.txt") into methylpy_conv_rate
-    file("log.txt") into methylpy_log_file
+        output:
+        file "allc_${name}*" into methylpy_results
+        file("conversion_rate_${name}.txt") into methylpy_conv_rate
+        file("log.txt") into methylpy_log_file
 
-    script:
-    // 1. need to sort bam files
-    // 2. methylpy to generate allc files
-    """
-    samtools sort -o ${name}.sorted.bam $bam 
-    samtools index ${name}.sorted.bam
-    methylpy call-methylation-state \
-    --input-file ${name}.sorted.bam  \
-    --paired-end True \
-    --sample $name \
-    --ref-fasta $fasta \
-    --unmethylated-control $params.umeth \
-    --num-procs ${task.cpus} > log.txt 2>&1
-    cat log.txt | grep "non-conversion rate" > conversion_rate_${name}.txt
-    """
+        script:
+        // 1. need to sort bam files
+        // 2. methylpy to generate allc files
+        """
+        samtools sort -o ${name}.sorted.bam $bam 
+        samtools index ${name}.sorted.bam
+        methylpy call-methylation-state \
+        --input-file ${name}.sorted.bam  \
+        --paired-end True \
+        --sample $name \
+        --ref-fasta $fasta \
+        --unmethylated-control $params.umeth \
+        --num-procs ${task.cpus} > log.txt 2>&1
+        cat log.txt | grep "non-conversion rate" > conversion_rate_${name}.txt
+        """
+    }
 }
 
 /*
