@@ -975,7 +975,9 @@ process qualimap {
     gcref = params.genome.toString().startsWith('GRCm') ? '-gd MOUSE' : ''
     def avail_mem = task.memory ? ((task.memory.toGiga() - 6) / task.cpus).trunc() : false
     def sort_mem = avail_mem && avail_mem > 2 ? "-m ${avail_mem}G" : ''
+    // unset the display for X11 error, http://qualimap.conesalab.org/doc_html/faq.html#x11problem
     """
+    unset DISPLAY
     samtools sort $bam \\
         -@ ${task.cpus} $sort_mem \\
         -o ${bam.baseName}.sorted.bam
