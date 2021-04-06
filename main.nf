@@ -1015,8 +1015,26 @@ process preseq {
 }
 
 if ( params.umeth ){ // run methylpy only when one gives unmethylated control
+
+    process sortBam {
+        tag "$name" 
+        input:
+        set val(name), file(bam) from ch_bam_for_methylpy
+
+        output:
+        file val(name), file("${name}.sorted.bam"), file("${name}.sorted.bam.bai") into ch_sorted_bam_for_methylpy
+
+        script:
+        // 1. need to sort bam files
+        """
+        samtools sort -o ${name}.sorted.bam $bam 
+        samtools index ${name}.sorted.bam
+        """
+    }
+
     process allc_methylpy {
         tag "$name"
+        container "quay.io/biocontainers/methylpy:1.4.3"
         publishDir "${params.outdir}", mode: 'copy',
             saveAs: {filename ->
                 if (filename =~ '^allc' ) "methylpy/$filename"
@@ -1025,7 +1043,7 @@ if ( params.umeth ){ // run methylpy only when one gives unmethylated control
             }
 
         input:
-        set val(name), file(bam) from ch_bam_for_methylpy
+        set val(name), file(bam), file(bam_idx) from ch_sorted_bam_for_methylpy
         file fasta from ch_fasta_for_methylpy.collect()
 
         output:
@@ -1034,13 +1052,10 @@ if ( params.umeth ){ // run methylpy only when one gives unmethylated control
         file("log.txt") into methylpy_log_file
 
         script:
-        // 1. need to sort bam files
-        // 2. methylpy to generate allc files
+        
         """
-        samtools sort -o ${name}.sorted.bam $bam 
-        samtools index ${name}.sorted.bam
         methylpy call-methylation-state \
-        --input-file ${name}.sorted.bam  \
+        --input-file ${bam}  \
         --paired-end True \
         --sample $name \
         --ref-fasta $fasta \
