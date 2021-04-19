@@ -1022,7 +1022,7 @@ if ( params.umeth ){ // run methylpy only when one gives unmethylated control
         set val(name), file(bam) from ch_bam_for_methylpy
 
         output:
-        file val(name), file("${name}.sorted.bam"), file("${name}.sorted.bam.bai") into ch_sorted_bam_for_methylpy
+        set val(name), file("${name}.sorted.bam"), file("${name}.sorted.bam.bai") into ch_sorted_bam_for_methylpy
 
         script:
         // 1. need to sort bam files
