@@ -1034,7 +1034,7 @@ if ( params.umeth ){ // run methylpy only when one gives unmethylated control
 
     process allc_methylpy {
         tag "$name"
-        container "quay.io/biocontainers/methylpy:1.4.3"
+        container "https://depot.galaxyproject.org/singularity/methylpy:1.4.3--py37h41a55b7_0"
         publishDir "${params.outdir}", mode: 'copy',
             saveAs: {filename ->
                 if (filename =~ '^allc' ) "methylpy/$filename"
