@@ -160,9 +160,9 @@ ch_output_docs_images = file("$projectDir/docs/images/", checkIfExists: true)
  */
 if (params.file_ext == 'bam' || params.file_ext == 'sra' ){
     ch_input_bam_files = Channel
-        .fromPath( params.reads )
+        .fromPath( params.input )
         .map { row -> [ file(row).baseName, file(row, checkIfExists: true) ] }
-        .ifEmpty { exit 1, "Cannot find any bam files matching: ${params.reads}\n" }
+        .ifEmpty { exit 1, "Cannot find any bam files matching: ${params.input}\n" }
 } else if (params.readPaths) {
     if (params.single_end) {
         Channel
@@ -402,7 +402,7 @@ if (params.file_ext == 'bam' || params.file_ext == 'sra'){
         set val(name), file(reads) from ch_input_bam_files
 
         output:
-        set val(name), file("${name}*fastq") into ch_read_files_for_fastqc, ch_read_files_for_trim_galore
+        set val(name), file("${name}*fastq") into ch_read_files_fastqc, ch_read_files_trimming
 
         script:
         if (params.file_ext == "sra") {
